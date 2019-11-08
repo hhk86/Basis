@@ -38,25 +38,34 @@ class TsTickData(object):
 
 
 def monitor():
+
     global val_min
     global stop
-    while True:
-        if stop:
-            time.sleep(1)
-            continue
-        with TsTickData() as tsl:
+    with TsTickData() as tsl:
+        while True:
+            if stop:
+                time.sleep(1)
+                continue
+
             future_price = tsl.getCurrentPrice("IC1911")
             index_price = tsl.getCurrentPrice("SH000905")
-            base = future_price - index_price
-        if base <= val_min or base >= val_max:
-            for i in range(30):
+            try:
+                base = future_price - index_price
+            except TypeError:
                 ax.texts = list()
-                ax.text(0 + random.random()/10, 0.2, str(int(base)), fontdict={"color": "red", "fontsize": 180})
+                ax.text(0.02, 0.5,"Failed to get TSL data! Try again in 5 seconds.")
                 plt.draw()
-                time.sleep(0.1)
-            stop_func(None)
-            ax.set_title("Suspend")
-        time.sleep(1)
+                time.sleep(5)
+                continue
+            if base <= val_min or base >= val_max:
+                for i in range(50):
+                    ax.texts = list()
+                    ax.text(0 + random.random()/5, 0.2, str(int(base)), fontdict={"color": "red", "fontsize": 180})
+                    plt.draw()
+                    time.sleep(0.1)
+                stop_func(None)
+                ax.set_title("Suspend")
+            time.sleep(1)
 
 
 def stop_func(event):

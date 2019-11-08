@@ -173,7 +173,7 @@ def future_historical_pnl(future_file, date1, date2):
 
 
 if __name__ == "__main__":
-    spot_df, future_df = makeDf("spot_1106.xlsx", "future_1106.xls", "减仓")
+    spot_df, future_df = makeDf("spot_1107_noon.xlsx", "future_1107_noon.xls", "加仓")
     print(calculate_basis(spot_df, future_df))
 
 
