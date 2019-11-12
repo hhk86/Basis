@@ -112,8 +112,8 @@ def calculate_basis(spot_df: pd.DataFrame, future_df: pd.DataFrame) -> float:
     return open_basis
 
 
-def stock_historical_pnl(spot_file, date1, date2):
-    spot_df = pd.read_excel(spot_file, encoding="gbk", skiprows=range(0, 4), index_col=None)
+def his_pos_spot_pnl(his_pos_spot_file, date1, date2):
+    spot_df = pd.read_excel(his_pos_spot_file, encoding="gbk", skiprows=range(0, 4), index_col=None)
     spot_df.drop([spot_df.shape[0] - 1], axis=0, inplace=True)
     spot_df = spot_df[["证券代码", "发生日期", "成本价", "股份余额"]]
     spot_df["股份余额"] = spot_df["股份余额"].apply(lambda s: int(str(s).replace(',', '')))
@@ -148,11 +148,11 @@ def stock_historical_pnl(spot_file, date1, date2):
     spot_df["pnl"] = (spot_df["historical_price_y"].sub(spot_df["historical_price_x"])).mul(spot_df["股份余额"])
     spot_df.to_csv("debug.csv", encoding="gbk")
     spot_pnl = spot_df["pnl"].sum()
-    print("Historical spot pnl: ", spot_pnl)
+    print("Historical spot position pnl: ", spot_pnl)
 
 
-def future_historical_pnl(future_file, date1, date2):
-    future_df = pd.read_excel(future_file, encoding="gbk")
+def his_pos_future_pnl(his_pos_future_file, date1, date2):
+    future_df = pd.read_excel(his_pos_future_file, encoding="gbk")
     # print(list(future_df.columns))
     future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
     # future_df = future_df[['证券代码', '当日买量', "当日卖量", '当日买入价', '当日卖出价']]
@@ -169,13 +169,47 @@ def future_historical_pnl(future_file, date1, date2):
     future_df["pnl"] = future_df["price2"].sub(future_df["price1"]).mul(future_df["持仓数量"])
     future_pnl = future_df["pnl"].sum() * 200
     print(future_df)
-    print("Historical future pnl: ", future_pnl)
+    print("Historical future position pnl: ", future_pnl)
+
+
+def his_trade_spot_pnl(his_trade_spot_file, date2) -> (pd.DataFrame, pd.DataFrame):
+    spot_df = pd.read_excel(his_trade_spot_file, encoding="gbk", skiprows=range(0, 4), index_col=None)
+    spot_df.drop([spot_df.shape[0] - 1], axis=0, inplace=True)
+    spot_df["成交数量"] = spot_df["成交数量"].apply(lambda s: int(str(s).replace(',', '')))
+    spot_df["证券代码"] = spot_df["证券代码"].astype(int)
+    spot_df["证券代码"] = spot_df["证券代码"].astype(str)
+    spot_df["证券代码"] = spot_df["证券代码"].apply(
+        lambda s: "SH" + s if s.startswith('6') and len(s) == 6 else "SZ" + s.zfill(6))
+    spot_df = spot_df[["证券代码", "成交时间", "成交价格", "成交数量", "买卖方向"]]
+    spot_df = spot_df[
+        (spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") & (spot_df["证券代码"] != "SZ511660")]
+    ticker_set = set(spot_df["证券代码"].tolist())
+    historical_price_df = pd.DataFrame()
+    print(len(ticker_set))
+    j = 0
+    for ticker in ticker_set:
+        with TsTickData() as tsl:
+            price = tsl.getHistoricalPrice(ticker, date2)
+        historical_price_df = historical_price_df.append(
+            pd.DataFrame([[ticker, price], ], columns=["ticker", "historical_price"]))
+        print(j)
+        j += 1
+    spot_df = pd.merge(spot_df, historical_price_df, left_on="证券代码", right_on="ticker", how="outer")
+    spot_df["pnl"] = (spot_df["historical_price"].sub(spot_df["成交价格"])).mul(spot_df["成交数量"]).mul(spot_df["买卖方向"].apply(lambda s: 1 if s == "买入" else -1))
+    pd.set_option("display.max_columns", None)
+    print(spot_df)
+    spot_pnl = spot_df["pnl"].sum()
+    print("Historical spot trade pnl: ", spot_pnl)
+
+
+def his_trade_future_pnl(his_trade_spot_file, date2) -> (pd.DataFrame, pd.DataFrame):
 
 
 if __name__ == "__main__":
-    spot_df, future_df = makeDf("spot_1107_noon.xlsx", "future_1107_noon.xls", "加仓")
-    print(calculate_basis(spot_df, future_df))
+    # spot_df, future_df = makeDf("spot_1107_noon.xlsx", "future_1107_noon.xls", "加仓")
+    # print(calculate_basis(spot_df, future_df))
 
 
-    # stock_historical_pnl("his_spot_1104.xlsx", "20191104", "20191105")
-    # future_historical_pnl("his_future_1104.xls", "20191104", "20191105")
+    # his_pos_spot_pnl("his_pos_spot_20191108.xlsx", "20191108", "20191111")
+    # his_pos_future_pnl("his_pos_future_20191108.xls", "20191108", "20191111")
+    his_trade_spot_pnl("his_trade_spot_20191111.xlsx", "20191111")
