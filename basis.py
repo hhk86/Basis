@@ -126,7 +126,7 @@ def his_pos_spot_pnl(his_pos_spot_file, date1, date2):
     ticker_set = set(spot_df["证券代码"].tolist())
     historical_price_df1 = pd.DataFrame()
     historical_price_df2 = pd.DataFrame()
-    print(len(ticker_set))
+    # print(len(ticker_set))
     # print(ticker_set)
     j = 0
     for ticker in ticker_set:
@@ -134,21 +134,22 @@ def his_pos_spot_pnl(his_pos_spot_file, date1, date2):
             price = tsl.getHistoricalPrice(ticker, date1)
         historical_price_df1 = historical_price_df1.append(
             pd.DataFrame([[ticker, price], ], columns=["ticker", "historical_price"]))
-        print(j)
+        # print(j)
         j += 1
     for ticker in ticker_set:
         with TsTickData() as tsl:
             price = tsl.getHistoricalPrice(ticker, date2)
         historical_price_df2 = historical_price_df2.append(
             pd.DataFrame([[ticker, price], ], columns=["ticker", "historical_price"]))
-        print(j)
+        # print(j)
         j += 1
     spot_df = pd.merge(spot_df, historical_price_df1, left_on="证券代码", right_on="ticker", how="outer")
     spot_df = pd.merge(spot_df, historical_price_df2, left_on="证券代码", right_on="ticker", how="outer")
     spot_df["pnl"] = (spot_df["historical_price_y"].sub(spot_df["historical_price_x"])).mul(spot_df["股份余额"])
     spot_df.to_csv("debug.csv", encoding="gbk")
     spot_pnl = spot_df["pnl"].sum()
-    print("Historical spot position pnl: ", spot_pnl)
+    print("现货底仓盈亏: ", spot_pnl)
+    return spot_pnl
 
 
 def his_pos_future_pnl(his_pos_future_file, date1, date2):
@@ -168,8 +169,9 @@ def his_pos_future_pnl(his_pos_future_file, date1, date2):
     future_df["price2"] = future_price2
     future_df["pnl"] = future_df["price2"].sub(future_df["price1"]).mul(future_df["持仓数量"])
     future_pnl = future_df["pnl"].sum() * 200
-    print(future_df)
-    print("Historical future position pnl: ", future_pnl)
+    # print(future_df)
+    print("期货底仓盈亏: ", future_pnl)
+    return future_pnl
 
 
 def his_trade_spot_pnl(his_trade_spot_file, date2) -> (pd.DataFrame, pd.DataFrame):
@@ -185,31 +187,46 @@ def his_trade_spot_pnl(his_trade_spot_file, date2) -> (pd.DataFrame, pd.DataFram
         (spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") & (spot_df["证券代码"] != "SZ511660")]
     ticker_set = set(spot_df["证券代码"].tolist())
     historical_price_df = pd.DataFrame()
-    print(len(ticker_set))
+    # print(len(ticker_set))
     j = 0
     for ticker in ticker_set:
         with TsTickData() as tsl:
             price = tsl.getHistoricalPrice(ticker, date2)
         historical_price_df = historical_price_df.append(
             pd.DataFrame([[ticker, price], ], columns=["ticker", "historical_price"]))
-        print(j)
+        # print(j)
         j += 1
     spot_df = pd.merge(spot_df, historical_price_df, left_on="证券代码", right_on="ticker", how="outer")
     spot_df["pnl"] = (spot_df["historical_price"].sub(spot_df["成交价格"])).mul(spot_df["成交数量"]).mul(spot_df["买卖方向"].apply(lambda s: 1 if s == "买入" else -1))
     pd.set_option("display.max_columns", None)
-    print(spot_df)
+    # print(spot_df)
     spot_pnl = spot_df["pnl"].sum()
-    print("Historical spot trade pnl: ", spot_pnl)
+    print("现货交易盈亏: ", spot_pnl)
+    return spot_pnl
 
 
-def his_trade_future_pnl(his_trade_spot_file, date2) -> (pd.DataFrame, pd.DataFrame):
-
+def his_trade_future_pnl(his_trade_future_file, date2) -> (pd.DataFrame, pd.DataFrame):
+    future_df = pd.read_excel(his_trade_future_file, encoding="gbk")
+    future_df = future_df[['成交均价', '成交数量', '委托方向']]
+    future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
+    print(future_df)
+    with TsTickData() as tsl:
+        future_price = tsl.getHistoricalPrice("IC1911", date2)
+    # future_df["future_close_price"] = future_price
+    future_df["pnl"] = (future_price - future_df["成交均价"]).mul(future_df["成交数量"]).mul(
+        future_df["委托方向"].apply(lambda s: 1 if s.startswith("买入") else -1))
+    # print(future_df)
+    future_pnl = future_df["pnl"].sum() * 200
+    print("期货交易盈亏: ", future_pnl)
+    return future_pnl
 
 if __name__ == "__main__":
     # spot_df, future_df = makeDf("spot_1107_noon.xlsx", "future_1107_noon.xls", "加仓")
     # print(calculate_basis(spot_df, future_df))
 
 
-    # his_pos_spot_pnl("his_pos_spot_20191108.xlsx", "20191108", "20191111")
-    # his_pos_future_pnl("his_pos_future_20191108.xls", "20191108", "20191111")
-    his_trade_spot_pnl("his_trade_spot_20191111.xlsx", "20191111")
+    pnl = his_pos_spot_pnl("his_pos_spot_20191108.xlsx", "20191108", "20191111") \
+          + his_pos_future_pnl("his_pos_future_20191108.xls", "20191108", "20191111")\
+          + his_trade_spot_pnl("his_trade_spot_20191111.xlsx", "20191111") \
+          + his_trade_future_pnl("his_trade_future_20191111.xls", "20191111")
+    print("总盈亏: ", pnl)
