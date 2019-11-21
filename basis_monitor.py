@@ -47,9 +47,9 @@ def monitor():
                 time.sleep(1)
                 continue
 
-            future_price = tsl.getCurrentPrice("IC1911")
+            future_price = tsl.getCurrentPrice("IC1912")
             index_price = tsl.getCurrentPrice("SH000905")
-            long_future_price = tsl.getCurrentPrice("IC1912")
+            long_future_price = tsl.getCurrentPrice("IC2001")
             try:
                 basis = future_price - index_price
                 calendar_spread = long_future_price - future_price
@@ -113,10 +113,10 @@ def update_max2(val):
 
 if __name__ == "__main__":
     stop = False
-    val_min = -60
-    val_max = 10
-    val_min2 = -90
-    val_max2 = 10
+    val_min = -100
+    val_max = 20
+    val_min2 = -100
+    val_max2 = 20
     fig = plt.figure(figsize=(5,5))
     ax = fig.add_subplot(1, 1, 1)
     plt.subplots_adjust(bottom=0.4)
@@ -125,16 +125,16 @@ if __name__ == "__main__":
     bnext.on_clicked(stop_func)
     left, bottom, width, height = 0.15, 0.05, 0.5, 0.05
     slider_ax_max = plt.axes([left, bottom + 0.24, width, height])
-    slider_max = Slider(slider_ax_max, 'Max', valmin=-60, valmax=10, valstep=1, valinit=10)
+    slider_max = Slider(slider_ax_max, 'Max', valmin=-100, valmax=20, valstep=1, valinit=20)
     slider_max.on_changed(update_max)
     slider_ax_min = plt.axes([left, bottom + 0.16, width, height])
-    slider_min = Slider(slider_ax_min, 'Min', valmin=-60, valmax=10, valstep=1, valinit=-60)
+    slider_min = Slider(slider_ax_min, 'Min', valmin=-100, valmax=20, valstep=1, valinit=-100)
     slider_min.on_changed(update_min)
     slider_ax_max2 = plt.axes([left, bottom + 0.08, width, height])
-    slider_max2 = Slider(slider_ax_max2, 'Max', valmin=-90, valmax=10, valstep=1, valinit=10)
+    slider_max2 = Slider(slider_ax_max2, 'Max', valmin=-100, valmax=20, valstep=1, valinit=20)
     slider_max2.on_changed(update_max2)
     slider_ax_min2 = plt.axes([left, bottom, width, height])
-    slider_min2 = Slider(slider_ax_min2, 'Min', valmin=-90, valmax=10, valstep=1, valinit=-90)
+    slider_min2 = Slider(slider_ax_min2, 'Min', valmin=-100, valmax=20, valstep=1, valinit=-100)
     slider_min2.on_changed(update_min2)
     ax.set_title("Working")
     t = Thread(target=monitor)
