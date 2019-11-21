@@ -69,7 +69,23 @@ class TsTickData(object):
             raise Exception("Error when execute tsl")
 
 
-def makeDf(spot_file, future_file, direction: str, start_time=None, end_time=None) -> (pd.DataFrame, pd.DataFrame):
+def makeDf(spot_file, future_file,  start_time=None, end_time=None) -> (pd.DataFrame, pd.DataFrame):
+    '''
+    :param spot_file: 柜台系统，委托成交查询 - 当日成交数据，导出为xlsx格式，去除千位符
+    :param future_file: O32系统，综合信息查询 - 成交回报，明细，导出为xls格式
+    :param direction: “建仓”或“减仓”
+    :param start_time: 截取日内时段的起始时间，格式“%Y-%m-%d %H:%M:%S"，默认为空
+    :param end_time: 截取日内时段的结束时间，格式“%Y-%m-%d %H:%M:%S"， 默认为空
+    :return:
+    '''
+    future_df = pd.read_excel(future_file, encoding="gbk")
+    print("\n")
+
+
+    if start_time is not None and end_time is not None:
+        print("交易时间：", start_time, " ~ ", end_time)
+    else:
+        print("交易时间: 全天")
     spot_df = pd.read_excel(spot_file, encoding="gbk", skiprows=range(0, 4), index_col=None)
     spot_df.drop([spot_df.shape[0] - 1], axis=0, inplace=True)
     if end_time is not None and start_time is not None:
@@ -79,74 +95,70 @@ def makeDf(spot_file, future_file, direction: str, start_time=None, end_time=Non
     spot_df["证券代码"] = spot_df["证券代码"].astype(str)
     spot_df["证券代码"] = spot_df["证券代码"].apply(
         lambda s: "SH" + s if s.startswith('6') and len(s) == 6 else "SZ" + s.zfill(6))
-    if direction == "加仓":
-        spot_df["same_direction"] = spot_df["成交结果"].apply(lambda s: 1 if s.startswith("买入") else -1)
-    elif direction == "减仓":
-        spot_df["same_direction"] = spot_df["成交结果"].apply(lambda s: 1 if s.startswith("卖出") else -1)
-    else:
-        raise ValueError("Wrong direction: " + direction)
-    spot_df["adjusted_quantity"] = spot_df["成交数量"].mul(spot_df["same_direction"])
-    spot_df = spot_df[["证券代码", "成交时间", "成交价格", "成交数量", "adjusted_quantity", "成交结果"]]
-    spot_df = spot_df[
-        (spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") & (spot_df["证券代码"] != "SZ511660")]
-    init_spot_net_sum = spot_df["成交价格"].mul(spot_df["adjusted_quantity"]).sum()
-    print("Initial sum of total equity: ", init_spot_net_sum)
+    spot_df["direction"] = spot_df["成交结果"].apply(lambda s: 1 if s.startswith("买入") else -1)
+    spot_df["成交数量"] = spot_df["成交数量"].mul(spot_df["direction"])
+    spot_df = spot_df[["证券代码", "成交时间", "成交价格", "成交数量",  "成交结果"]]
+    spot_df = spot_df[(spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") \
+                      & (spot_df["证券代码"] != "SZ511660") & (spot_df["成交数量"] != 0)]
+    init_spot_net_sum = spot_df["成交价格"].mul(spot_df["成交数量"]).sum()
+    print("现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万")
 
-    future_df = pd.read_excel(future_file, encoding="gbk")
+    # future_df = pd.read_excel(future_file, encoding="gbk")
     future_df = future_df[['成交时间', '成交价格', '成交数量', '委托方向']]
     future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
     if end_time is not None and start_time is not None:
-        future_df = future_df[(future_df["成交时间"] >= start_time[-8:]) & (future_df["成交时间"] <= end_time[-8:])]
-    if direction == "加仓":
-        future_df["same_direction"] = future_df["委托方向"].apply(lambda s: 1 if s.startswith("卖出") else -1)
-    elif direction == "减仓":
-        future_df["same_direction"] = future_df["委托方向"].apply(lambda s: 1 if s.startswith("买入") else -1)
-    future_df["adjusted_quantity"] = future_df["成交数量"].mul(future_df["same_direction"])
-    init_future_net_sum = future_df["成交价格"].mul(future_df["adjusted_quantity"]).sum() * 200
-    print("Initial sum of total future contracts: ", init_future_net_sum)
+         future_df = future_df[(future_df["成交时间"] >= start_time[-8:]) & (future_df["成交时间"] <= end_time[-8:])]
+    future_df["direction"] = future_df["委托方向"].apply(lambda s: 1 if s.startswith("买入") else -1)
+    future_df["成交数量"] = future_df["成交数量"].mul(future_df["direction"])
+    init_future_net_sum = future_df["成交价格"].mul(future_df["成交数量"]).sum() * 200
+    print("期货交易净额: ", round(init_future_net_sum / 1000000, 2) , "百万")
+
+    print("未匹配净额：", round((init_spot_net_sum + init_future_net_sum) / 1000000, 2) , "百万")
 
     return spot_df, future_df
 
 
-def calculate_basis(spot_df: pd.DataFrame, future_df: pd.DataFrame) -> float:
+def calculate_basis(spot_df: pd.DataFrame, future_df: pd.DataFrame, direction: str, theoretical_spot_pnl: float):
     ticker_set = set(spot_df["证券代码"].tolist())
     current_price_df = pd.DataFrame()
-    print(len(ticker_set))
-    j = 0
-    for ticker in ticker_set:
-        with TsTickData() as tsl:
+    with TsTickData() as tsl:
+        for ticker in ticker_set:
             price = tsl.getCurrentPrice(ticker)
-        current_price_df = current_price_df.append(
-            pd.DataFrame([[ticker, price], ], columns=["ticker", "current_price"]))
-        # print(j)
-        j += 1
+            current_price_df = current_price_df.append(pd.DataFrame([[ticker, price], ], columns=["ticker", "current_price"]))
     spot_df = pd.merge(spot_df, current_price_df, left_on="证券代码", right_on="ticker", how="outer")
     spot_df["pnl"] = (spot_df["current_price"].sub(spot_df["成交价格"])).mul(spot_df["成交数量"])
-    spot_df.to_csv("debug.csv", encoding="gbk")
     spot_pnl = spot_df["pnl"].sum()
-    print("Spot pnl: ", spot_pnl)
+    print("现货盈亏: ", round(spot_pnl / 10000, 2), "万")
 
     with TsTickData() as tsl:
         future_price = tsl.getCurrentPrice("IC1912")
-        print(future_price)
     future_df["current_price"] = future_price
     future_df["pnl"] = (future_df["current_price"].sub(future_df["成交价格"])).mul(future_df["成交数量"])
     future_pnl = future_df["pnl"].sum() * 200
-    future_net_num = future_df["adjusted_quantity"].sum()
-    print("Future pnl: ", future_pnl)
+    future_net_num = abs(future_df["成交数量"].sum())
+    print("期货盈亏: ", round(future_pnl / 10000, 2), "万")
+    pnl = spot_pnl + future_pnl
+    print("总盈亏：", round(pnl / 10000, 2), "万")
+    print("净期货张数：", future_net_num, "张")
 
-    # 事实上，加仓减仓都一样
-    pnl = spot_pnl - future_pnl  # 建仓
-    basis_change = - pnl / future_net_num / 200  # 建仓
-    # pnl = future_pnl - spot_pnl # 平仓
-    # basis_change = pnl / future_net_num / 200   # 平仓
-    print(pnl)
+
     with TsTickData() as tsl:
         index_price = tsl.getCurrentPrice("SH000905")
     current_basis = future_price - index_price
-    open_basis = round(current_basis - basis_change, 2)
-
-    return open_basis
+    # 对于加仓而言，基差变负会产生浮动盈利，因此开仓基差 = 现基差 + pnl / 合约数 / 200
+    # 对于减仓而言，基差变正会产生浮动盈利，因此开仓基差 = 先基差 - pnl / 合约数 / 200
+    alpha_basis = (spot_pnl - theoretical_spot_pnl) / future_net_num / 200
+    if direction == "加仓":
+        open_basis = current_basis + pnl / future_net_num / 200
+        adjusted_basis = open_basis - alpha_basis
+    elif direction == "减仓":
+        open_basis = current_basis - pnl / future_net_num / 200
+        adjusted_basis = open_basis - alpha_basis
+    else:
+        raise ValueError("参数错误: " + direction)
+    print("开仓基差：", round(open_basis, 2), "点")
+    print("现货组合比指数高：", round(alpha_basis, 2), "点")
+    print("去除现货Alpha影响后的开仓基差:", round(adjusted_basis, 2), "点")
 
 
 def his_pos_spot_pnl(his_pos_spot_file, date1, date2):
@@ -278,24 +290,22 @@ def spot_theoretical_profit(spot_df):
     future_table.rename(columns={"price": "future_price"}, inplace=True)
     df = pd.merge(spot_df, market_table, left_on="成交时间", right_on="time")
     df = pd.merge(df, future_table, left_on="成交时间", right_on="time")
-    df = df[["证券代码", "成交时间", "成交价格", "adjusted_quantity", "spot_price", "future_price"]]
+    df = df[["证券代码", "成交时间", "成交价格", "成交数量", "spot_price", "future_price"]]
     df["basis"] =  df["future_price"] - df["spot_price"]
-    df["amount"] = df["成交价格"].mul(df["adjusted_quantity"])
-    # amount_sum = df["amount"].sum()
-    # df["pct"] = df["amount"] / amount_sum
+    df["amount"] = df["成交价格"].mul(df["成交数量"])
     df["return"] = spot_price / df["spot_price"] - 1
     df["pnl"] = df["amount"].mul(df["return"])
-    df.to_csv("debug_theoretical_spot.csv", encoding="gbk")
+    # df.to_csv("debug_theoretical_spot.csv", encoding="gbk")
     theoretical_spot_pnl = df["pnl"].sum()
-    print("theoretical spot pnl: ", theoretical_spot_pnl)
+    print("完全复制的理论现货盈亏: ", round(theoretical_spot_pnl / 10000, 2), "万")
+    return theoretical_spot_pnl
 
 if __name__ == "__main__":
     # spot_df, future_df = makeDf("spot_1119_morning.xlsx", "future_1119_morning.xls", "加仓", "2019-11-19 11:00:00", "2019-11-19 11:20:00")
-    spot_df, future_df = makeDf("spot_1121.xlsx", "future_1121.xls", "加仓")
-    # spot_df, future_df = makeDf("spot_1119_afternoon.xlsx", "future_1119_afternoon.xls", "加仓")
-    spot_theoretical_profit(spot_df)
-    print(calculate_basis(spot_df, future_df))
 
+    spot_df, future_df = makeDf(spot_file="spot_1121.xlsx", future_file="future_1121.xls", start_time="2019-11-21 13:00:00", end_time="2019-11-21 15:00:00")
+    theoretical_spot_pnl = spot_theoretical_profit(spot_df)
+    calculate_basis(spot_df, future_df, direction="加仓", theoretical_spot_pnl=theoretical_spot_pnl)
 
 
 
