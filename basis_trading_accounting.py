@@ -73,9 +73,12 @@ class Basis():
     def __init__(self, **kwargs):
         if len(kwargs) != 2 and len(kwargs) != 4:
             raise ValueError("Wrong arguments:" + str(kwargs))
-        elif len(kwargs) == 2:
+        elif len(kwargs) == 2 or len(kwargs) == 4:
             self.spot_df = pd.read_excel(kwargs["spot_file"], encoding="gbk", skiprows=range(0, 4), index_col=None)
             self.future_df = pd.read_excel(kwargs["future_file"], encoding="gbk")
+        if len(kwargs) == 4:
+            self.his_spot_df = pd.read_excel(kwargs["his_spot_file"], encoding="gbk", skiprows=range(0, 4), index_col=None)
+            self.his_future_df = pd.read_excel(kwargs["his_future_file"], encoding="gbk")
 
     def make_today_df(self):
         spot_df = self.spot_df
@@ -83,7 +86,7 @@ class Basis():
         start_time = input("Input start time:\n>>>")
         end_time = input("Input end time:\n>>>")
         print('\n' * 2)
-        if len(start_time) == 8 and len(end_time) == 8:
+        if len(start_time) == 19 and len(end_time) == 19:
             print("交易时间：", start_time, " ~ ", end_time)
             spot_df = spot_df[(spot_df["成交时间"] >= start_time) & (spot_df["成交时间"] <= end_time)]
         else:
@@ -105,7 +108,7 @@ class Basis():
 
         future_df = future_df[['成交时间', '成交价格', '成交数量', '委托方向']]
         future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
-        if len(end_time) == 8 and len(start_time) == 8:
+        if len(end_time) == 19 and len(start_time) == 19:
              future_df = future_df[(future_df["成交时间"] >= start_time[-8:]) & (future_df["成交时间"] <= end_time[-8:])]
         future_df["direction"] = future_df["委托方向"].apply(lambda s: 1 if s.startswith("买入") else -1)
         future_df["成交数量"] = future_df["成交数量"].mul(future_df["direction"])
@@ -195,6 +198,28 @@ class Basis():
             raise ValueError("参数错误: " + direction)
 
 
+    def make_historical_df(self):
+        spot_df = self.his_spot_df
+        future_df = self.his_future_df
+        spot_df.drop([spot_df.shape[0] - 1], axis=0, inplace=True)
+        spot_df = spot_df[["证券代码", "发生日期", "成本价", "股份余额"]]
+        spot_df["股份余额"] = spot_df["股份余额"].apply(lambda s: int(str(s).replace(',', '')))
+        spot_df["证券代码"] = spot_df["证券代码"].astype(int)
+        spot_df["证券代码"] = spot_df["证券代码"].astype(str)
+        spot_df["证券代码"] = spot_df["证券代码"].apply(
+            lambda s: "SH" + s if s.startswith('6') and len(s) == 6 else "SZ" + s.zfill(6))
+        spot_df = spot_df[
+            (spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") & (spot_df["证券代码"] != "SZ511660")]
+
+        future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
+        future_df = future_df[['证券代码', "持仓数量"]]
+        # 四列分别为8355多、空， 8305多、空
+        future_df.iloc[1, 1] = - future_df.iloc[1, 1]
+        future_df.iloc[3, 1] = - future_df.iloc[3, 1]
+        self.his_spot_df = spot_df
+        self.his_future_df = future_df
+
+
 if __name__ == "__main__":
-    obj = Basis(spot_file="spot_1122.xlsx", future_file="future_1122.xls")
-    obj.calculate_basis()
+    obj = Basis(spot_file="spot_1122.xlsx", future_file="future_1122.xls", his_spot_file="his_spot_1121.xlsx", his_future_file="his_future_1121.xls")
+    obj.make_historical_df()
