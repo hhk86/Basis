@@ -8,6 +8,8 @@ import TSLPy3 as ts
 from colorama import init
 init(strip=not sys.stdout.isatty()) # strip colors if stdout is redirected
 from threading import Thread
+import warnings
+warnings.filterwarnings('ignore')
 
 
 

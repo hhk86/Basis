@@ -127,6 +127,7 @@ def calculate_basis(spot_df: pd.DataFrame, future_df: pd.DataFrame, direction: s
             current_price_df = current_price_df.append(pd.DataFrame([[ticker, price], ], columns=["ticker", "current_price"]))
     spot_df = pd.merge(spot_df, current_price_df, left_on="证券代码", right_on="ticker", how="outer")
     spot_df["pnl"] = (spot_df["current_price"].sub(spot_df["成交价格"])).mul(spot_df["成交数量"])
+    spot_df.to_csv("现货核算.csv", encoding="gbk")
     spot_pnl = spot_df["pnl"].sum()
     print("现货盈亏: ", round(spot_pnl / 10000, 2), "万")
 
@@ -134,6 +135,7 @@ def calculate_basis(spot_df: pd.DataFrame, future_df: pd.DataFrame, direction: s
         future_price = tsl.getCurrentPrice("IC1912")
     future_df["current_price"] = future_price
     future_df["pnl"] = (future_df["current_price"].sub(future_df["成交价格"])).mul(future_df["成交数量"])
+    future_df.to_csv("期货核算.csv", encoding="gbk")
     future_pnl = future_df["pnl"].sum() * 200
     future_net_num = abs(future_df["成交数量"].sum())
     print("期货盈亏: ", round(future_pnl / 10000, 2), "万")
@@ -151,14 +153,17 @@ def calculate_basis(spot_df: pd.DataFrame, future_df: pd.DataFrame, direction: s
     if direction == "加仓":
         open_basis = current_basis + pnl / future_net_num / 200
         adjusted_basis = open_basis - alpha_basis
+        print("加仓基差：", round(open_basis, 2), "点")
+        print("现货组合比指数高：", round(alpha_basis, 2), "点")
+        print("去除现货Alpha影响后的加仓基差:", round(adjusted_basis, 2), "点")
     elif direction == "减仓":
         open_basis = current_basis - pnl / future_net_num / 200
-        adjusted_basis = open_basis - alpha_basis
+        adjusted_basis = open_basis + alpha_basis
+        print("减仓基差：", round(open_basis, 2), "点")
+        print("现货组合比指数高：", round(alpha_basis, 2), "点")
+        print("去除现货Alpha影响后的减仓基差:", round(adjusted_basis, 2), "点")
     else:
         raise ValueError("参数错误: " + direction)
-    print("开仓基差：", round(open_basis, 2), "点")
-    print("现货组合比指数高：", round(alpha_basis, 2), "点")
-    print("去除现货Alpha影响后的开仓基差:", round(adjusted_basis, 2), "点")
 
 
 def his_pos_spot_pnl(his_pos_spot_file, date1, date2):
@@ -302,10 +307,10 @@ def spot_theoretical_profit(spot_df):
 
 if __name__ == "__main__":
     # spot_df, future_df = makeDf("spot_1119_morning.xlsx", "future_1119_morning.xls", "加仓", "2019-11-19 11:00:00", "2019-11-19 11:20:00")
-
-    spot_df, future_df = makeDf(spot_file="spot_1121.xlsx", future_file="future_1121.xls", start_time="2019-11-21 13:00:00", end_time="2019-11-21 15:00:00")
+    spot_df, future_df = makeDf(spot_file="spot_1122.xlsx", future_file="future_1122.xls")
+    # spot_df, future_df = makeDf(spot_file="spot_1122.xlsx", future_file="future_1122.xls", start_time="2019-11-22 10:30:00", end_time="2019-11-22 15:00:00")
     theoretical_spot_pnl = spot_theoretical_profit(spot_df)
-    calculate_basis(spot_df, future_df, direction="加仓", theoretical_spot_pnl=theoretical_spot_pnl)
+    calculate_basis(spot_df, future_df, direction="减仓", theoretical_spot_pnl=theoretical_spot_pnl)
 
 
 
