@@ -52,6 +52,7 @@ def monitor():
             future_price = tsl.getCurrentPrice("IC1912")
             index_price = tsl.getCurrentPrice("SH000905")
             long_future_price = tsl.getCurrentPrice("IC2001")
+            # print(future_price, index_price, long_future_price)
             try:
                 basis = future_price - index_price
                 calendar_spread = long_future_price - future_price

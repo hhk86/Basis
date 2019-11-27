@@ -8,6 +8,7 @@ import TSLPy3 as ts
 import warnings
 warnings.simplefilter(action='ignore')
 
+
 class TsTickData(object):
 
     def __enter__(self):
@@ -91,6 +92,7 @@ class Basis():
             spot_df = spot_df[(spot_df["成交时间"] >= start_time) & (spot_df["成交时间"] <= end_time)]
         else:
             print("交易时间: 全天")
+        spot_df.index = list(range(spot_df.shape[0]))
         spot_df.drop([spot_df.shape[0] - 1], axis=0, inplace=True)
         spot_df["成交数量"] = spot_df["成交数量"].apply(lambda s: int(str(s).replace(',', '')))
         spot_df["证券代码"] = spot_df["证券代码"].astype(int)
@@ -162,7 +164,7 @@ class Basis():
         spot_df["pnl"] = (spot_df["current_price"].sub(spot_df["成交价格"])).mul(spot_df["成交数量"])
         spot_df.to_csv("现货核算.csv", encoding="gbk")
         spot_pnl = spot_df["pnl"].sum()
-        print("现货盈亏: ", round(spot_pnl / 10000, 2), "万")
+        print("现货交易盈亏: ", round(spot_pnl / 10000, 2), "万")
 
         with TsTickData() as tsl:
             future_price = tsl.getCurrentPrice("IC1912")
@@ -171,9 +173,11 @@ class Basis():
         future_df.to_csv("期货核算.csv", encoding="gbk")
         future_pnl = future_df["pnl"].sum() * 200
         future_net_num = abs(future_df["成交数量"].sum())
-        print("期货盈亏: ", round(future_pnl / 10000, 2), "万")
-        pnl = spot_pnl + future_pnl
-        print("总盈亏：", round(pnl / 10000, 2), "万")
+        print("期货交易盈亏: ", round(future_pnl / 10000, 2), "万")
+        self.trading_pnl = spot_pnl + future_pnl
+        self.trading_spot_pnl = spot_pnl
+        self.trading_future_pnl = future_pnl
+        print("总交易盈亏：", round(self.trading_pnl / 10000, 2), "万")
         print("净期货张数：", future_net_num, "张")
 
         with TsTickData() as tsl:
@@ -183,13 +187,13 @@ class Basis():
         # 对于减仓而言，基差变正会产生浮动盈利，因此开仓基差 = 先基差 - pnl / 合约数 / 200
         alpha_basis = (spot_pnl - self.theoretical_spot_pnl) / future_net_num / 200
         if direction == '+':
-            open_basis = current_basis + pnl / future_net_num / 200
+            open_basis = current_basis + self.trading_pnl / future_net_num / 200
             adjusted_basis = open_basis - alpha_basis
             print("加仓基差：", round(open_basis, 2), "点")
             print("现货组合比指数高：", round(alpha_basis, 2), "点")
             print("去除现货Alpha影响后的加仓基差:", round(adjusted_basis, 2), "点")
         elif direction == '-':
-            open_basis = current_basis - pnl / future_net_num / 200
+            open_basis = current_basis - self.trading_pnl / future_net_num / 200
             adjusted_basis = open_basis + alpha_basis
             print("减仓基差：", round(open_basis, 2), "点")
             print("现货组合比指数高：", round(alpha_basis, 2), "点")
@@ -198,7 +202,8 @@ class Basis():
             raise ValueError("参数错误: " + direction)
 
 
-    def make_historical_df(self):
+    def make_historical_df(self, settlement_price1=None):
+        print("\n\n昨日持仓计算")
         spot_df = self.his_spot_df
         future_df = self.his_future_df
         spot_df.drop([spot_df.shape[0] - 1], axis=0, inplace=True)
@@ -210,16 +215,83 @@ class Basis():
             lambda s: "SH" + s if s.startswith('6') and len(s) == 6 else "SZ" + s.zfill(6))
         spot_df = spot_df[
             (spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") & (spot_df["证券代码"] != "SZ511660")]
+        net_spot_sum = spot_df["股份余额"].mul(spot_df["成本价"]).sum()
+        print("昨日现货持仓:", round(net_spot_sum / 1000000, 2), "百万")
+
 
         future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
         future_df = future_df[['证券代码', "持仓数量"]]
         # 四列分别为8355多、空， 8305多、空
         future_df.iloc[1, 1] = - future_df.iloc[1, 1]
         future_df.iloc[3, 1] = - future_df.iloc[3, 1]
+        future_df.iloc[4, 1] = - future_df.iloc[4, 1]
+        net_future_sum = future_df["持仓数量"].sum() * settlement_price1 * 200
+        if settlement_price1 is not None:
+            print("昨日期货持仓:", round(net_future_sum / 1000000, 2), "百万")
+        print("未匹配金额:", round((net_spot_sum + net_future_sum) / 1000000, 2), "百万")
         self.his_spot_df = spot_df
         self.his_future_df = future_df
 
 
+    def calculate_position_pnl(self, date1, date2, settlement_price1, settlement_price2):
+        self.make_historical_df(settlement_price1=settlement_price1)
+        spot_df = self.his_spot_df
+        future_df = self.his_future_df
+        ticker_set = set(spot_df["证券代码"].tolist())
+        historical_price_df1 = pd.DataFrame()
+        historical_price_df2 = pd.DataFrame()
+        with TsTickData() as tsl:
+            for ticker in ticker_set:
+                price = tsl.getHistoricalPrice(ticker, date1)
+                historical_price_df1 = historical_price_df1.append(
+                    pd.DataFrame([[ticker, price], ], columns=["ticker", "historical_price"]))
+            for ticker in ticker_set:
+                price = tsl.getHistoricalPrice(ticker, date2)
+                historical_price_df2 = historical_price_df2.append(
+                    pd.DataFrame([[ticker, price], ], columns=["ticker", "historical_price"]))
+        spot_df = pd.merge(spot_df, historical_price_df1, left_on="证券代码", right_on="ticker", how="outer")
+        spot_df = pd.merge(spot_df, historical_price_df2, left_on="证券代码", right_on="ticker", how="outer")
+        spot_df["pnl"] = (spot_df["historical_price_y"].sub(spot_df["historical_price_x"])).mul(spot_df["股份余额"])
+        spot_df.to_csv("历史现货核算.csv", encoding="gbk")
+        spot_pnl = spot_df["pnl"].sum()
+        print("现货底仓盈亏: ", round(spot_pnl / 10000, 2), "万")
+
+
+        self.his_future_net_num = abs(future_df["持仓数量"].sum())
+        future_df["price1"] = settlement_price1
+        future_df["price2"] = settlement_price2
+        future_df["pnl"] = future_df["price2"].sub(future_df["price1"]).mul(future_df["持仓数量"])
+        future_df.to_csv("历史期货核算.csv", encoding="gbk")
+        future_pnl = future_df["pnl"].sum() * 200
+        print("期货底仓盈亏: ", round(future_pnl / 10000, 2), "万")
+
+        self.position_pnl = spot_pnl + future_pnl
+        print("持仓总盈亏：", round(self.position_pnl / 10000, 2), "万")
+
+
+    def total_pnl(self, date1, date2, settlement_price1, settlement_price2):
+        self.calculate_basis()
+        self.calculate_position_pnl(date1, date2, settlement_price1, settlement_price2)
+
+        theoretical_trade_pnl = self.theoretical_spot_pnl + self.trading_future_pnl
+        with TsTickData() as tsl:
+            index1 = tsl.getHistoricalPrice("SH000905", date1)
+            index2 = tsl.getHistoricalPrice("SH000905", date2)
+        theoretical_pos_base_change = (settlement_price2 - index2) - (settlement_price1 - index1)
+        theoretical_pos_pnl = - theoretical_pos_base_change * self.his_future_net_num * 200
+        print('\n','-' * 20)
+        print("交易总盈亏:", round(self.trading_pnl / 10000, 2), "万")
+        print("底仓总盈亏:", round(self.position_pnl / 10000, 2), "万")
+        print("账户总盈亏：", round((self.trading_pnl + self.position_pnl) / 10000, 2), "万")
+        print("交易总盈亏(假设现货完全复制指数):", round(theoretical_trade_pnl / 10000, 2), "万")
+        print("底仓总盈亏(假设现货完全复制指数):", round(theoretical_pos_pnl / 10000, 2), "万")
+        print("账户总盈亏(假设现货完全复制指数)：", round((theoretical_trade_pnl + theoretical_pos_pnl) / 10000, 2), "万")
+
+
 if __name__ == "__main__":
-    obj = Basis(spot_file="spot_1122.xlsx", future_file="future_1122.xls", his_spot_file="his_spot_1121.xlsx", his_future_file="his_future_1121.xls")
-    obj.make_historical_df()
+    print("运行代码前，必需检查his_future_file的结构是否发生变化")
+    # obj = Basis(spot_file="spot_1127.xlsx", future_file="future_1127.xls")
+    # obj.calculate_basis()
+    obj = Basis(spot_file="spot_1127.xlsx", future_file="future_1127.xls", his_spot_file="his_spot_1126.xlsx", his_future_file="his_future_1126.xls")
+    obj.total_pnl(date1="20191126", date2="20191127", settlement_price1=4863.2, settlement_price2=4866.2) #结算价
+    # obj.total_pnl(date1="20191126", date2="20191127", settlement_price1=4853.2, settlement_price2=4880.2) #收盘价
