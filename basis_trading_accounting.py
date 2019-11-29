@@ -103,7 +103,17 @@ class Basis():
         spot_df["成交数量"] = spot_df["成交数量"].mul(spot_df["direction"])
         spot_df = spot_df[["证券代码", "成交时间", "成交价格", "成交数量",  "成交结果"]]
         spot_df = spot_df[(spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") \
-                          & (spot_df["证券代码"] != "SZ511660") & (spot_df["成交数量"] != 0)]
+                          & (spot_df["证券代码"] != "SZ511660")]
+
+
+        total_num = spot_df.shape[0]
+        cancel_num = spot_df[spot_df["成交数量"] == 0].shape[0]
+        entrust_num = total_num - cancel_num
+        print("撤单比率：", round(cancel_num / entrust_num * 100, 2), '%')
+        print("达到40%撤单比需要委托:", round(cancel_num / 0.4 - entrust_num), "笔")
+        spot_df = spot_df[spot_df["成交数量"] != 0]
+
+
         init_spot_net_sum = spot_df["成交价格"].mul(spot_df["成交数量"]).sum()
         print("现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万")
 
