@@ -292,6 +292,6 @@ if __name__ == "__main__":
     print("运行代码前，必需检查his_future_file的结构是否发生变化")
     # obj = Basis(spot_file="spot_1127.xlsx", future_file="future_1127.xls")
     # obj.calculate_basis()
-    obj = Basis(spot_file="spot_1127.xlsx", future_file="future_1127.xls", his_spot_file="his_spot_1126.xlsx", his_future_file="his_future_1126.xls")
-    obj.total_pnl(date1="20191126", date2="20191127", settlement_price1=4863.2, settlement_price2=4866.2) #结算价
+    obj = Basis(spot_file="spot_1129.xlsx", future_file="future_1129.xls", his_spot_file="his_spot_1128.xlsx", his_future_file="his_future_1128.xls")
+    obj.total_pnl(date1="20191128", date2="20191129", settlement_price1=4867.8, settlement_price2=4871.4) #结算价
     # obj.total_pnl(date1="20191126", date2="20191127", settlement_price1=4853.2, settlement_price2=4880.2) #收盘价
