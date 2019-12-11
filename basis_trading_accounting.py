@@ -114,8 +114,8 @@ class Basis():
         spot_df = spot_df[spot_df["成交数量"] != 0]
 
 
-        init_spot_net_sum = spot_df["成交价格"].mul(spot_df["成交数量"]).sum()
-        print("现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万")
+        # init_spot_net_sum = spot_df["成交价格"].mul(spot_df["成交数量"]).sum()
+        # print("现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万") # 此处为估算
 
 
         future_df = future_df[['成交时间', '成交价格', '成交数量', '委托方向', "证券代码"]]
@@ -124,11 +124,31 @@ class Basis():
              future_df = future_df[(future_df["成交时间"] >= start_time[-8:]) & (future_df["成交时间"] <= end_time[-8:])]
         future_df["direction"] = future_df["委托方向"].apply(lambda s: 1 if s.startswith("买入") else -1)
         future_df["成交数量"] = future_df["成交数量"].mul(future_df["direction"])
-        init_future_net_sum = future_df["成交价格"].mul(future_df["成交数量"]).sum() * 200
-        print("期货交易净额: ", round(init_future_net_sum / 1000000, 2) , "百万")
-        print("未匹配净额：", round((init_spot_net_sum + init_future_net_sum) / 1000000, 2) , "百万")
+        # init_future_net_sum = future_df["成交价格"].mul(future_df["成交数量"]).sum() * 200
+        # print("期货交易净额: ", round(init_future_net_sum / 1000000, 2) , "百万")
+        # print("未匹配净额：", round((init_spot_net_sum + init_future_net_sum) / 1000000, 2) , "百万")
         self.spot_df = spot_df
         self.future_df = future_df
+
+
+        ticker_set = set(spot_df["证券代码"].tolist())
+        current_price_df = pd.DataFrame()
+        with TsTickData() as tsl:
+            for ticker in ticker_set:
+                price = tsl.getCurrentPrice(ticker)
+                current_price_df = current_price_df.append(
+                    pd.DataFrame([[ticker, price], ], columns=["ticker", "current_price"]))
+        spot_df = pd.merge(spot_df, current_price_df, left_on="证券代码", right_on="ticker", how="outer")
+        init_spot_net_sum = spot_df["current_price"].mul(spot_df["成交数量"]).sum()
+        print("现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万")   #此处为精确计算
+
+
+        with TsTickData() as tsl:
+            init_future_net_sum = future_df[future_df["证券代码"] == "IC1912"]["成交数量"].sum() * tsl.getCurrentPrice("IC1912") * 200 \
+                            + future_df[future_df["证券代码"] == "IC2001"]["成交数量"].sum() * tsl.getCurrentPrice("IC2001") * 200
+        print("期货交易净额: ", round(init_future_net_sum / 1000000, 2), "百万")
+        print("未匹配净额：", round((init_spot_net_sum + init_future_net_sum) / 1000000, 2), "百万")
+
 
 
     def spot_theoretical_profit(self):
