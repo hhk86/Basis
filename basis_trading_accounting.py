@@ -109,8 +109,8 @@ class Basis():
         total_num = spot_df.shape[0]
         cancel_num = spot_df[spot_df["成交数量"] == 0].shape[0]
         entrust_num = total_num - cancel_num
-        print("撤单比率：", round(cancel_num / entrust_num * 100, 2), '%')
-        print("达到40%撤单比需要委托:", round(cancel_num / 0.4 - entrust_num), "笔")
+        # print("撤单比率：", round(cancel_num / entrust_num * 100, 2), '%')
+        # print("达到40%撤单比需要委托:", round(cancel_num / 0.4 - entrust_num), "笔")
         spot_df = spot_df[spot_df["成交数量"] != 0]
 
 
@@ -118,7 +118,7 @@ class Basis():
         print("现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万")
 
 
-        future_df = future_df[['成交时间', '成交价格', '成交数量', '委托方向']]
+        future_df = future_df[['成交时间', '成交价格', '成交数量', '委托方向', "证券代码"]]
         future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
         if len(end_time) == 19 and len(start_time) == 19:
              future_df = future_df[(future_df["成交时间"] >= start_time[-8:]) & (future_df["成交时间"] <= end_time[-8:])]
@@ -176,9 +176,21 @@ class Basis():
         spot_pnl = spot_df["pnl"].sum()
         print("现货交易盈亏: ", round(spot_pnl / 10000, 2), "万")
 
+
+
+        ticker_set = set(future_df["证券代码"].tolist())
+        current_price_df = pd.DataFrame()
         with TsTickData() as tsl:
-            future_price = tsl.getCurrentPrice("IC1912")
-        future_df["current_price"] = future_price
+            for ticker in ticker_set:
+                price = tsl.getCurrentPrice(ticker)
+                current_price_df = current_price_df.append(pd.DataFrame([[ticker, price], ], columns=["ticker", "current_price"]))
+        future_df = pd.merge(future_df, current_price_df, left_on="证券代码", right_on="ticker", how="outer")
+        #
+        #
+        #
+        # with TsTickData() as tsl:
+        #     future_price = tsl.getCurrentPrice("IC1912")
+        # future_df["current_price"] = future_price
         future_df["pnl"] = (future_df["current_price"].sub(future_df["成交价格"])).mul(future_df["成交数量"])
         future_df.to_csv("期货核算.csv", encoding="gbk")
         future_pnl = future_df["pnl"].sum() * 200
@@ -192,6 +204,7 @@ class Basis():
 
         with TsTickData() as tsl:
             index_price = tsl.getCurrentPrice("SH000905")
+            future_price = tsl.getCurrentPrice("IC1912")
         current_basis = future_price - index_price
         # 对于加仓而言，基差变负会产生浮动盈利，因此开仓基差 = 现基差 + pnl / 合约数 / 200
         # 对于减仓而言，基差变正会产生浮动盈利，因此开仓基差 = 先基差 - pnl / 合约数 / 200
@@ -212,7 +225,7 @@ class Basis():
             raise ValueError("参数错误: " + direction)
 
 
-    def make_historical_df(self, settlement_price1=None):
+    def make_historical_df(self, date1=None, settlement_price1=None, settlement_price3=None):
         print("\n\n昨日持仓计算")
         spot_df = self.his_spot_df
         future_df = self.his_future_df
@@ -225,26 +238,47 @@ class Basis():
             lambda s: "SH" + s if s.startswith('6') and len(s) == 6 else "SZ" + s.zfill(6))
         spot_df = spot_df[
             (spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") & (spot_df["证券代码"] != "SZ511660")]
-        net_spot_sum = spot_df["股份余额"].mul(spot_df["成本价"]).sum()
-        print("昨日现货持仓:", round(net_spot_sum / 1000000, 2), "百万")
+        # net_spot_sum = spot_df["股份余额"].mul(spot_df["成本价"]).sum()
+        #
+        #
+        # print("昨日现货持仓:", round(net_spot_sum / 1000000, 2), "百万")  # 此处为估算
 
 
         future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
         future_df = future_df[['证券代码', "持仓数量"]]
         # 四列分别为8355多、空， 8305多、空
         future_df.iloc[1, 1] = - future_df.iloc[1, 1]
-        future_df.iloc[3, 1] = - future_df.iloc[3, 1]
+        future_df.iloc[3, 1] = - +future_df.iloc[3, 1]
         future_df.iloc[4, 1] = - future_df.iloc[4, 1]
-        net_future_sum = future_df["持仓数量"].sum() * settlement_price1 * 200
-        if settlement_price1 is not None:
-            print("昨日期货持仓:", round(net_future_sum / 1000000, 2), "百万")
-        print("未匹配金额:", round((net_spot_sum + net_future_sum) / 1000000, 2), "百万")
+        # net_future_sum = future_df[future_df["证券代码"] == "IC1912"]["持仓数量"].sum() * settlement_price1 * 200 \
+        #                 + future_df[future_df["证券代码"] == "IC2001"]["持仓数量"].sum() * settlement_price3 * 200
+        # if settlement_price1 is not None:
+        #     print("昨日期货持仓:", round(net_future_sum / 1000000, 2), "百万")
+
         self.his_spot_df = spot_df
         self.his_future_df = future_df
 
 
-    def calculate_position_pnl(self, date1, date2, settlement_price1, settlement_price2):
-        self.make_historical_df(settlement_price1=settlement_price1)
+        ticker_set = set(spot_df["证券代码"].tolist())
+        historical_price_df = pd.DataFrame()
+        with TsTickData() as tsl:
+            for ticker in ticker_set:
+                price = tsl.getHistoricalPrice(ticker, date1)
+                historical_price_df = historical_price_df.append(
+                    pd.DataFrame([[ticker, price], ], columns=["ticker", "historical_price"]))
+        spot_df = pd.merge(spot_df, historical_price_df, left_on="证券代码", right_on="ticker", how="outer")
+        net_spot_sum = spot_df["股份余额"].mul(spot_df["historical_price"]).sum()
+        print("昨日现货持仓:", round(net_spot_sum / 1000000, 2), "百万")  # 此处为精确计算
+        with TsTickData() as tsl:
+            net_future_sum = future_df[future_df["证券代码"] == "IC1912"]["持仓数量"].sum() * tsl.getHistoricalPrice("IC1912", date1) * 200 \
+                            + future_df[future_df["证券代码"] == "IC2001"]["持仓数量"].sum() * tsl.getHistoricalPrice("IC2001", date1) * 200
+        if settlement_price1 is not None:
+            print("昨日期货持仓:", round(net_future_sum / 1000000, 2), "百万") # 此处为精确计算
+        print("未匹配金额:", round((net_spot_sum + net_future_sum) / 1000000, 2), "百万")
+
+
+    def calculate_position_pnl(self, date1, date2, settlement_price1, settlement_price2, settlement_price3, settlement_price4):
+        self.make_historical_df(date1=date1, settlement_price1=settlement_price1, settlement_price3=settlement_price3)
         spot_df = self.his_spot_df
         future_df = self.his_future_df
         ticker_set = set(spot_df["证券代码"].tolist())
@@ -268,8 +302,12 @@ class Basis():
 
 
         self.his_future_net_num = abs(future_df["持仓数量"].sum())
-        future_df["price1"] = settlement_price1
-        future_df["price2"] = settlement_price2
+        future_price_df = pd.DataFrame([["IC1912", settlement_price1, settlement_price2],
+                                        ["IC2001", settlement_price3, settlement_price4]],
+                                       columns=["证券代码", "price1", "price2"])
+        # future_df["price1"] = settlement_price1
+        # future_df["price2"] = settlement_price2
+        future_df = pd.merge(future_df, future_price_df, on="证券代码", how="outer")
         future_df["pnl"] = future_df["price2"].sub(future_df["price1"]).mul(future_df["持仓数量"])
         future_df.to_csv("历史期货核算.csv", encoding="gbk")
         future_pnl = future_df["pnl"].sum() * 200
@@ -279,9 +317,9 @@ class Basis():
         print("持仓总盈亏：", round(self.position_pnl / 10000, 2), "万")
 
 
-    def total_pnl(self, date1, date2, settlement_price1, settlement_price2):
+    def total_pnl(self, date1, date2, settlement_price1, settlement_price2, settlement_price3, settlement_price4):
         self.calculate_basis()
-        self.calculate_position_pnl(date1, date2, settlement_price1, settlement_price2)
+        self.calculate_position_pnl(date1, date2, settlement_price1, settlement_price2, settlement_price3, settlement_price4)
 
         theoretical_trade_pnl = self.theoretical_spot_pnl + self.trading_future_pnl
         with TsTickData() as tsl:
@@ -300,8 +338,8 @@ class Basis():
 
 if __name__ == "__main__":
     print("运行代码前，必需检查his_future_file的结构是否发生变化")
-    # obj = Basis(spot_file="spot_1127.xlsx", future_file="future_1127.xls")
+    # obj = Basis(spot_file="spot_1205.xlsx", future_file="future_1205.xls")
     # obj.calculate_basis()
-    obj = Basis(spot_file="spot_1129.xlsx", future_file="future_1129.xls", his_spot_file="his_spot_1128.xlsx", his_future_file="his_future_1128.xls")
-    obj.total_pnl(date1="20191128", date2="20191129", settlement_price1=4867.8, settlement_price2=4871.4) #结算价
-    # obj.total_pnl(date1="20191126", date2="20191127", settlement_price1=4853.2, settlement_price2=4880.2) #收盘价
+    obj = Basis(spot_file="spot_1211.xlsx", future_file="future_1211.xls", his_spot_file="his_spot_1210.xlsx", his_future_file="his_future_1210.xls")
+    obj.total_pnl(date1="20191210", date2="20191211", settlement_price1=5053.8, settlement_price2=5029.1, settlement_price3=5029.6, settlement_price4=5004.8) #结算价
+    # obj.total_ pnl(date1="20191206", date2="20191209", settlement_price1=5015.6, settlement_price2=5018.8, settlement_price3=4989.6, settlement_price4=4988.2)  # 结算价
