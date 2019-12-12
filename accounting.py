@@ -101,10 +101,10 @@ class Basis():
             lambda s: "SH" + s if s.startswith('6') and len(s) == 6 else "SZ" + s.zfill(6))
         spot_df["direction"] = spot_df["成交结果"].apply(lambda s: 1 if s.startswith("买入") else -1)
         spot_df["成交数量"] = spot_df["成交数量"].mul(spot_df["direction"])
-        spot_df = spot_df[["证券代码", "成交时间", "成交价格", "成交数量",  "成交结果"]]
+        spot_df = spot_df[["证券代码", "成交时间", "成交价格", "成交数量",  "成交结果", "交易费用"]]
         spot_df = spot_df[(spot_df["证券代码"] != "SZ511880") & (spot_df["证券代码"] != "SZ511990") \
                           & (spot_df["证券代码"] != "SZ511660") & (spot_df["成交数量"] != 0)]
-        future_df = future_df[['成交时间', '成交价格', '成交数量', '委托方向', "证券代码"]]
+        future_df = future_df[['成交时间', '成交价格', '成交数量', '委托方向', "证券代码", "结算费"]]
         future_df.drop([future_df.shape[0] - 1], axis=0, inplace=True)
         if len(end_time) == 19 and len(start_time) == 19:
              future_df = future_df[(future_df["成交时间"] >= start_time[-8:]) & (future_df["成交时间"] <= end_time[-8:])]
@@ -156,8 +156,7 @@ class Basis():
         init_spot_net_sum = spot_df["current_price"].mul(spot_df["成交数量"]).sum()
         spot_df["pnl"] = (spot_df["current_price"].sub(spot_df["成交价格"])).mul(spot_df["成交数量"])
         spot_df.to_csv("现货核算.csv", encoding="gbk")
-        spot_pnl = spot_df["pnl"].sum()
-
+        spot_pnl = spot_df["pnl"].sum() - spot_df["交易费用"].sum()
 
         future_net_num = abs(future_df["成交数量"].sum())
         ticker_set = set(future_df["证券代码"].tolist())
@@ -170,7 +169,7 @@ class Basis():
         init_future_net_sum = future_df["成交数量"].mul(future_df["current_price"]).sum() * 200
         future_df["pnl"] = (future_df["current_price"].sub(future_df["成交价格"])).mul(future_df["成交数量"])
         future_df.to_csv("期货核算.csv", encoding="gbk")
-        future_pnl = future_df["pnl"].sum() * 200
+        future_pnl = future_df["pnl"].sum() * 200 - future_df["结算费"].sum()
         self.trading_pnl = spot_pnl + future_pnl
         self.trading_spot_pnl = spot_pnl
         self.trading_future_pnl = future_pnl
