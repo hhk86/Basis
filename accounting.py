@@ -300,6 +300,6 @@ class Basis():
 if __name__ == "__main__":
     # obj = Basis(spot_file="spot_1205.xlsx", future_file="future_1205.xls")
     # obj.calculate_basis()
-    obj = Basis(spot_file="spot_1211.xlsx", future_file="future_1211.xls", his_spot_file="his_spot_1210.xlsx", his_future_file="his_future_1210.xls")
-    obj.total_pnl(date1="20191210", date2="20191211", settlement_price1=5053.8, settlement_price2=5029.1, settlement_price3=5029.6, settlement_price4=5004.8,
+    obj = Basis(spot_file="spot_1212.xlsx", future_file="future_1212.xls", his_spot_file="his_spot_1211.xlsx", his_future_file="his_future_1211.xls")
+    obj.total_pnl(date1="20191211", date2="20191212", settlement_price1=5029.0, settlement_price2=5027.8, settlement_price3=5004.8, settlement_price4=5004.4,
                   long_short_ls=[1, -1, 1, -1, -1]) #结算价
