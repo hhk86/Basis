@@ -128,10 +128,10 @@ if __name__ == "__main__":
     bnext.on_clicked(stop_func)
     left, bottom, width, height = 0.15, 0.05, 0.5, 0.05
     slider_ax_max = plt.axes([left, bottom + 0.24, width, height])
-    slider_max = Slider(slider_ax_max, 'Max', valmin=-100, valmax=20, valstep=1, valinit=20)
+    slider_max = Slider(slider_ax_max, 'Max', valmin=-100, valmax=30, valstep=1, valinit=30)
     slider_max.on_changed(update_max)
     slider_ax_min = plt.axes([left, bottom + 0.16, width, height])
-    slider_min = Slider(slider_ax_min, 'Min', valmin=-100, valmax=20, valstep=1, valinit=-100)
+    slider_min = Slider(slider_ax_min, 'Min', valmin=-100, valmax=30, valstep=1, valinit=-100)
     slider_min.on_changed(update_min)
     slider_ax_max2 = plt.axes([left, bottom + 0.08, width, height])
     slider_max2 = Slider(slider_ax_max2, 'Max', valmin=-100, valmax=20, valstep=1, valinit=20)

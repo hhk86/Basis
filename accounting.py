@@ -165,6 +165,8 @@ class Basis():
             for ticker in ticker_set:
                 price = tsl.getCurrentPrice(ticker)
                 current_price_df = current_price_df.append(pd.DataFrame([[ticker, price], ], columns=["ticker", "current_price"]))
+
+
         future_df = pd.merge(future_df, current_price_df, left_on="证券代码", right_on="ticker", how="outer")
         init_future_net_sum = future_df["成交数量"].mul(future_df["current_price"]).sum() * 200
         future_df["pnl"] = (future_df["current_price"].sub(future_df["成交价格"])).mul(future_df["成交数量"])
@@ -298,8 +300,10 @@ class Basis():
 
 
 if __name__ == "__main__":
-    # obj = Basis(spot_file="spot_1205.xlsx", future_file="future_1205.xls")
+    # obj = Basis(spot_file="399_spot_1218.xlsx", future_file="9099_future_1218.xls")
     # obj.calculate_basis()
-    obj = Basis(spot_file="spot_1212.xlsx", future_file="future_1212.xls", his_spot_file="his_spot_1211.xlsx", his_future_file="his_future_1211.xls")
-    obj.total_pnl(date1="20191211", date2="20191212", settlement_price1=5029.0, settlement_price2=5027.8, settlement_price3=5004.8, settlement_price4=5004.4,
-                  long_short_ls=[1, -1, 1, -1, -1]) #结算价
+    obj = Basis(spot_file="spot_1218.xlsx", future_file="future_1218.xls", his_spot_file="his_spot_1217.xlsx", his_future_file="his_future_1217.xls")
+    obj.total_pnl(date1="20191217", date2="20191218", settlement_price1=5257.0, settlement_price2=5245.8, settlement_price3=5243.8, settlement_price4=5240.8, long_short_ls=[-1, 1, -1, -1]) #结算价
+
+
+    # obj.calculate_position_pnl(date1="20191212", date2="20191213", settlement_price1=5257.0, settlement_price2=5158.4, settlement_price3=5243.8, settlement_price4=5135.4, long_short_ls=[-1, 1, -1, -1])
