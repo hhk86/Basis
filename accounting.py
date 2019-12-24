@@ -121,7 +121,7 @@ class Basis():
         with TsTickData() as tsl:
             market_table = tsl.getMarketTable("SH000905", date, next_date)
             spot_price = tsl.getCurrentPrice("SH000905")
-            future_table = tsl.getMarketTable("IC1912", date, next_date)
+            future_table = tsl.getMarketTable("IC2001", date, next_date)
         pd.set_option("display.max_columns", None)
         market_table = market_table.reset_index()
         market_table = market_table[["time", "price"]]
@@ -140,7 +140,7 @@ class Basis():
         print("完全复制的理论现货盈亏: ", round(self.theoretical_spot_pnl / 10000, 2), "万")
 
 
-    def calculate_basis(self):
+    def calculate_basis(self, settlement_price4):
         direction = input("Please input open position(+) or close position(-)\n >>>")
         self.make_today_df()
         spot_df = self.spot_df
@@ -160,11 +160,17 @@ class Basis():
 
         future_net_num = abs(future_df["成交数量"].sum())
         ticker_set = set(future_df["证券代码"].tolist())
-        current_price_df = pd.DataFrame()
-        with TsTickData() as tsl:
-            for ticker in ticker_set:
-                price = tsl.getCurrentPrice(ticker)
-                current_price_df = current_price_df.append(pd.DataFrame([[ticker, price], ], columns=["ticker", "current_price"]))
+
+        # Old version: Use close price
+
+        # current_price_df = pd.DataFrame()
+        # with TsTickData() as tsl:
+        #     for ticker in ticker_set:
+        #         price = tsl.getCurrentPrice(ticker)
+        #         current_price_df = current_price_df.append(pd.DataFrame([[ticker, price], ], columns=["ticker", "current_price"]))
+
+        # New version: Use settlement price
+        current_price_df = pd.DataFrame([["IC2001", settlement_price4],], columns=["ticker", "current_price"])
 
 
         future_df = pd.merge(future_df, current_price_df, left_on="证券代码", right_on="ticker", how="outer")
@@ -188,7 +194,7 @@ class Basis():
         print("总交易盈亏：", round(self.trading_pnl / 10000, 2), "万")
         with TsTickData() as tsl:
             index_price = tsl.getCurrentPrice("SH000905")
-            future_price = tsl.getCurrentPrice("IC1912")
+            future_price = tsl.getCurrentPrice("IC2001")
         current_basis = future_price - index_price
         # 对于加仓而言，基差变负会产生浮动盈利，因此开仓基差 = 现基差 + pnl / 合约数 / 200
         # 对于减仓而言，基差变正会产生浮动盈利，因此开仓基差 = 先基差 - pnl / 合约数 / 200
@@ -281,7 +287,7 @@ class Basis():
 
 
     def total_pnl(self, date1, date2, settlement_price1, settlement_price2, settlement_price3, settlement_price4, long_short_ls):
-        self.calculate_basis()
+        self.calculate_basis(settlement_price4=settlement_price4)
         self.calculate_position_pnl(date1, date2, settlement_price1, settlement_price2, settlement_price3, settlement_price4, long_short_ls)
 
         theoretical_trade_pnl = self.theoretical_spot_pnl + self.trading_future_pnl
@@ -300,10 +306,7 @@ class Basis():
 
 
 if __name__ == "__main__":
-    # obj = Basis(spot_file="399_spot_1218.xlsx", future_file="9099_future_1218.xls")
+    # obj = Basis(spot_file="spot_1223.xlsx", future_file="future_1223.xls")
     # obj.calculate_basis()
-    obj = Basis(spot_file="spot_1218.xlsx", future_file="future_1218.xls", his_spot_file="his_spot_1217.xlsx", his_future_file="his_future_1217.xls")
-    obj.total_pnl(date1="20191217", date2="20191218", settlement_price1=5257.0, settlement_price2=5245.8, settlement_price3=5243.8, settlement_price4=5240.8, long_short_ls=[-1, 1, -1, -1]) #结算价
-
-
-    # obj.calculate_position_pnl(date1="20191212", date2="20191213", settlement_price1=5257.0, settlement_price2=5158.4, settlement_price3=5243.8, settlement_price4=5135.4, long_short_ls=[-1, 1, -1, -1])
+    obj = Basis(spot_file="spot_1224.xlsx", future_file="future_1224.xls", his_spot_file="his_spot_1223.xlsx", his_future_file="his_future_1223.xls")
+    obj.total_pnl(date1="20191223", date2="20191224", settlement_price1=0, settlement_price2=0, settlement_price3=5099.6, settlement_price4=5149.0, long_short_ls=[ 1, -1]) #结算价
