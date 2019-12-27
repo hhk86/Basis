@@ -7,8 +7,14 @@ import pickle
 import os
 import cx_Oracle
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Button, Slider, TextBox
 sys.path.append("D:\\Program Files\\Tinysoft\\Analyse.NET")
 import TSLPy3 as ts
+import matplotlib as mpl
+mpl.rcParams['font.sans-serif'] = ['KaiTi']
+mpl.rcParams['font.serif'] = ['KaiTi']
+mpl.rcParams['axes.unicode_minus'] = False
+
 
 import warnings
 warnings.simplefilter(action='ignore')
@@ -55,17 +61,17 @@ class TsTickData(object):
         fail, value, _ = ts.RemoteExecute(ts_sql, {})
         return value
 
-    def getMarketTable(self, code, start_date, end_date):
-        ts_template = Template('''begT:= StrToDate('{{start_date}}');
-                                  endT:= StrToDate('{{end_date}}');
-                                  setsysparam(pn_cycle(),cy_1s());
-                                  setsysparam(pn_rate(),0);
-                                  setsysparam(pn_RateDay(),rd_lastday);
-                                  r:= select  ["StockID"] as 'ticker', datetimetostr(["date"]) as "time", ["price"]
-                                      from markettable datekey begT to endT of "{{code}}" end;
-                                  return r;''')
-        ts_sql = ts_template.render(start_date=dateparse(start_date).strftime('%Y-%m-%d'),
-                                    end_date=dateparse(end_date).strftime('%Y-%m-%d'),
+    def getMarketTable(self, code, start_time, end_time):
+        ts_template = Template('''  begT:= StrToDateTime('{{start_time}}');
+                                    endT:= StrToDateTime('{{end_time}}');
+                                    setsysparam(pn_cycle(),cy_1s());
+                                    setsysparam(pn_rate(),0);
+                                    setsysparam(pn_RateDay(),rd_lastday);
+                                    r:= select  ["StockId"] as 'ticker', datetimetostr(["date"]) as "time", ["price"]
+                                            from markettable datekey begT to endT of '{{code}}' end;
+                                    return r;''')
+        ts_sql = ts_template.render(start_time=start_time,
+                                    end_time=end_time,
                                     code=code)
         fail, data, _ = ts.RemoteExecute(ts_sql, {})
 
@@ -149,9 +155,14 @@ def getTradeCalendar(start_date: str, end_date: str) -> list:
         tradingDays = oracle.query(sql)
     return sorted(tradingDays.TRADE_DAYS.tolist())
 
+
+
 class Analysis():
-    def __init__(self):
-        self.today = dt.datetime.now().strftime("%Y%m%d")
+    def __init__(self, today=None):
+        if today is None:
+            self.today = dt.datetime.now().strftime("%Y%m%d")
+        else:
+            self.today = today
         calendar = getTradeCalendar(start_date="20191201", end_date=self.today)
         self.last_trading_day = calendar[calendar.index(self.today) - 1]
         with open("params.pkl", "rb") as f:
@@ -159,6 +170,7 @@ class Analysis():
         self.long_short_list = params["long_short_list"]
         self.main_ticker = params["main_ticker"]
         self.make_df()
+        self.output = ['','','','']
 
 
     def make_df(self):
@@ -167,22 +179,22 @@ class Analysis():
         for root_ls, dir_ls, file_ls in os.walk(today_formatstr):
             for file in file_ls:
                 if file.startswith("spot"):
-                    self.spot_df = pd.read_excel(file, encoding="gbk", skiprows=range(0, 4), index_col=None)
+                    self.spot_df = pd.read_excel(today_formatstr + '/' + file, encoding="gbk", skiprows=range(0, 4), index_col=None)
                     if self.spot_df["成交时间"].tolist()[0][:10] != today_formatstr:
                         raise ValueError("数据时间错误！")
                     self.make_spot_df()
                 if file.startswith("future"):
-                    self.future_df = pd.read_excel(file, encoding="gbk")
+                    self.future_df = pd.read_excel(today_formatstr + '/' + file, encoding="gbk")
                     if self.future_df["日期"].tolist()[0] != today_formatstr:
                         raise ValueError("数据时间错误！")
                     self.make_future_df()
                 if file.startswith("his_spot"):
-                    self.his_spot_df = pd.read_excel(file, encoding="gbk", skiprows=range(0, 4), index_col=None)
+                    self.his_spot_df = pd.read_excel(today_formatstr + '/' + file, encoding="gbk", skiprows=range(0, 4), index_col=None)
                     if self.his_spot_df["发生日期"].tolist()[0] != last_day_fromatstr:
                         raise ValueError("数据时间错误！")
                     self.make_his_spot_df()
                 if file.startswith("his_future"):
-                    self.his_future_df = pd.read_excel(file, encoding="gbk")
+                    self.his_future_df = pd.read_excel(today_formatstr + '/' + file, encoding="gbk")
                     if self.his_future_df["持仓日期"].tolist()[0] != last_day_fromatstr:
                         raise ValueError("数据时间错误！")
                     self.make_his_future_df()
@@ -244,13 +256,24 @@ class Analysis():
             future_df.iloc[i, 1] = sign * future_df.iloc[i, 1]
         self.his_future_df = future_df
 
+    def matprint(self, n, *args) -> None:
+        s = ''
+        for string in args:
+            s += str(string)
+        self.output[n] += s + '\n'
+        print(s)
+
     def calculate_basis(self, price_type="close"):
+        self.output_basis = ""
         if price_type == "close":
-            print("\n基差交易日：", self.today)
+            self.matprint(0, "基差交易日：", self.today)
+            # print("\n基差交易日：", self.today)
         if price_type == "settlement":
-            print("\n交易日：", self.today)
+            self.matprint(1, "交易日：", self.today)
+            # print("交易日：", self.today)
         if price_type == "close" and (self.spot_df.shape[0] == 0 or self.future_df.shape[0] == 0):
-            print("无法计算基差")
+            self.matprint(0, "无法计算基差")
+            # print("无法计算基差")
             return
         spot_df = self.spot_df
         if spot_df.shape[0] > 0:
@@ -269,7 +292,8 @@ class Analysis():
             if price_type == "settlement":
                 spot_pnl -= spot_df["交易费用"].sum()
         else:
-            print(self.today, "无现货成交")
+            self.matprint(1, "无现货成交")
+            # print(self.today, "无现货成交")
             spot_pnl = 0
             init_spot_net_sum=0
 
@@ -296,7 +320,8 @@ class Analysis():
             if price_type == "settlement":
                 future_pnl -= future_df["结算费"].sum()
         else:
-            print(self.today,"无期货成交")
+            self.matprint(1, "无期货成交")
+            # print(self.today,"无期货成交")
             future_pnl = 0
             init_future_net_sum = 0
             future_net_num = 0
@@ -304,13 +329,20 @@ class Analysis():
 
 
         if price_type == "settlement":
-            print("现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万")
-            print("期货交易净额: ", round(init_future_net_sum / 1000000, 2), "百万")
-            print("未匹配净额：", round((init_spot_net_sum + init_future_net_sum) / 1000000, 2), "百万")
-            print("净期货张数：", future_net_num, "张")
-            print("现货交易盈亏: ", round(spot_pnl / 10000, 2), "万")
-            print("期货交易盈亏: ", round(future_pnl / 10000, 2), "万")
-            print("交易总盈亏：", round(self.trading_pnl / 10000, 2), "万")
+            self.matprint(1,"现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万")
+            self.matprint(1,"期货交易净额: ", round(init_future_net_sum / 1000000, 2), "百万")
+            self.matprint(1,"未匹配净额：", round((init_spot_net_sum + init_future_net_sum) / 1000000, 2), "百万")
+            self.matprint(1,"净期货张数：", future_net_num, "张")
+            self.matprint(1,"现货交易盈亏: ", round(spot_pnl / 10000, 2), "万")
+            self.matprint(1,"期货交易盈亏: ", round(future_pnl / 10000, 2), "万")
+            self.matprint(1, "交易总盈亏：", round(self.trading_pnl / 10000, 2), "万")
+            # print("现货交易净额: ", round(init_spot_net_sum / 1000000, 2) , "百万")
+            # print("期货交易净额: ", round(init_future_net_sum / 1000000, 2), "百万")
+            # print("未匹配净额：", round((init_spot_net_sum + init_future_net_sum) / 1000000, 2), "百万")
+            # print("净期货张数：", future_net_num, "张")
+            # print("现货交易盈亏: ", round(spot_pnl / 10000, 2), "万")
+            # print("期货交易盈亏: ", round(future_pnl / 10000, 2), "万")
+            # print("交易总盈亏：", round(self.trading_pnl / 10000, 2), "万")
 
         if price_type == "close":
             self.spot_theoretical_profit()
@@ -324,15 +356,27 @@ class Analysis():
             if init_spot_net_sum > 0:
                 open_basis = current_basis + self.trading_pnl / future_net_num / 200
                 adjusted_basis = open_basis - alpha_basis
-                print("加仓基差：", round(open_basis, 2), "点")
-                print("现货组合比指数高：", round(alpha_basis, 2), "点")
-                print("去除现货Alpha影响后的加仓基差:", round(adjusted_basis, 2), "点")
+                self.matprint(0, "加仓基差：", round(open_basis, 2), "点")
+                self.matprint(0, "现货组合比指数高：", round(alpha_basis, 2), "点")
+                self.matprint(0, "去除现货Alpha影响后的加仓基差:", round(adjusted_basis, 2), "点")
+                self.matprint(3, "加仓基差:", round(adjusted_basis, 2), "点")
+
+                # print("加仓基差：", round(open_basis, 2), "点")
+                # print("现货组合比指数高：", round(alpha_basis, 2), "点")
+                # print("去除现货Alpha影响后的加仓基差:", round(adjusted_basis, 2), "点")
             else:
                 open_basis = current_basis - self.trading_pnl / future_net_num / 200
                 adjusted_basis = open_basis + alpha_basis
-                print("减仓基差：", round(open_basis, 2), "点")
-                print("现货组合比指数高：", round(alpha_basis, 2), "点")
-                print("去除现货Alpha影响后的减仓基差:", round(adjusted_basis, 2), "点")
+                self.matprint(0, "减仓基差：", round(open_basis, 2), "点")
+                self.matprint(0, "现货组合比指数高：", round(alpha_basis, 2), "点")
+                self.matprint(0, "去除现货Alpha影响后的减仓基差:", round(adjusted_basis, 2), "点")
+                self.matprint(3, "减仓基差:", round(adjusted_basis, 2), "点")
+                # print("减仓基差：", round(open_basis, 2), "点")
+                # print("现货组合比指数高：", round(alpha_basis, 2), "点")
+                # print("去除现货Alpha影响后的减仓基差:", round(adjusted_basis, 2), "点")
+
+        # print("---------------------------\n\n")
+        # print(self.output)
 
 
     def spot_theoretical_profit(self):
@@ -362,7 +406,8 @@ class Analysis():
 
 
     def calculate_position_pnl(self):
-        print("\n底仓日:", self.last_trading_day)
+        self.matprint(2, "底仓日:", self.last_trading_day)
+        # print("底仓日:", self.last_trading_day)
         spot_df = self.his_spot_df
         if spot_df.shape[0] > 0:
             ticker_set = set(spot_df["证券代码"].tolist())
@@ -384,7 +429,8 @@ class Analysis():
             spot_df.to_csv("历史现货核算.csv", encoding="gbk")
             spot_pnl = spot_df["pnl"].sum()
         else:
-            print(self.last_trading_day, "无现货持仓")
+            self.matprint(2, "无现货持仓")
+            # print(self.last_trading_day, "无现货持仓")
             spot_pnl = 0
             net_spot_sum = 0
 
@@ -415,34 +461,133 @@ class Analysis():
             future_df.to_csv("历史期货核算.csv", encoding="gbk")
             future_pnl = future_df["pnl"].sum() * 200
         else:
-            print(self.last_trading_day, "无期货持仓")
+            self.matprint(2, "无期货持仓")
+            # print(self.last_trading_day, "无期货持仓")
             future_pnl = 0
             net_future_sum = 0
         self.position_pnl = spot_pnl + future_pnl
 
-
-
-        print("昨日现货持仓:", round(net_spot_sum / 1000000, 2), "百万")
-        print("昨日期货持仓:", round(net_future_sum / 1000000, 2), "百万") # 此处为精确计算
-        print("未匹配金额:", round((net_spot_sum + net_future_sum) / 1000000, 2), "百万")
-        print("现货底仓盈亏: ", round(spot_pnl / 10000, 2), "万")
-        print("期货底仓盈亏: ", round(future_pnl / 10000, 2), "万")
-        print("持仓总盈亏：", round(self.position_pnl / 10000, 2), "万")
+        self.matprint(2,"昨日现货持仓:", round(net_spot_sum / 1000000, 2), "百万")
+        self.matprint(2,"昨日期货持仓:", round(net_future_sum / 1000000, 2), "百万")
+        self.matprint(2,"未匹配金额:", round((net_spot_sum + net_future_sum) / 1000000, 2), "百万")
+        self.matprint(2,"现货底仓盈亏: ", round(spot_pnl / 10000, 2), "万")
+        self.matprint(2,"期货底仓盈亏: ", round(future_pnl / 10000, 2), "万")
+        self.matprint(2,"持仓总盈亏：", round(self.position_pnl / 10000, 2), "万")
+        # print("昨日现货持仓:", round(net_spot_sum / 1000000, 2), "百万")
+        # print("昨日期货持仓:", round(net_future_sum / 1000000, 2), "百万") # 此处为精确计算
+        # print("未匹配金额:", round((net_spot_sum + net_future_sum) / 1000000, 2), "百万")
+        # print("现货底仓盈亏: ", round(spot_pnl / 10000, 2), "万")
+        # print("期货底仓盈亏: ", round(future_pnl / 10000, 2), "万")
+        # print("持仓总盈亏：", round(self.position_pnl / 10000, 2), "万")
 
     def total_pnl(self):
+        self.calculate_basis(price_type="close")
         self.calculate_basis(price_type="settlement")
         self.calculate_position_pnl()
-        print("\n\n账户总盈亏：", round((self.trading_pnl + self.position_pnl) / 10000, 2), "万")
+        self.matprint(3,"账户总盈亏：", round((self.trading_pnl + self.position_pnl) / 10000, 2), "万")
+        # print("\n\n账户总盈亏：", round((self.trading_pnl + self.position_pnl) / 10000, 2), "万")
+
+    # def _time2min(self, s: str):
+    #     s = s[:14] + str(int(s[14:16]) // 2 * 2)
+    #     if len(s) == 15:
+    #         return s + '0:00'
+    #     else:
+    #         return s + ":00"
+
+    def _cal_size(self, x):
+        if abs(x) < 50000:
+            return 0.5
+        elif abs(x) < 500000:
+            return 1
+        elif abs(x) < 1000000:
+            return 2
+        elif abs(x) < 2000000:
+            return 3
+        elif abs(x) < 4000000:
+            return 4
+        elif abs(x) < 80000000:
+            return 5
+        elif abs(x) < 16000000:
+            return 6
+        elif abs(x) < 32000000:
+            return 7
+        elif abs(x) < 50000000:
+            return 7
+        else:
+            return 8
+
 
     def plot(self):
-        fig = plt.figure(figsize=(5, 5))
-        ax = fig.add_subplot(1, 1, 1)
+        spot_df = self.spot_df
+        future_df = self.future_df
+        today_formatstr = self.today[:4] + '-' + self.today[4:6] + '-' + self.today[6:]
+
+        with TsTickData() as tsl:
+            print(self.main_ticker)
+            spot_data = tsl.getMarketTable(code="SH000905", start_time=today_formatstr + " 09:30:00", end_time=today_formatstr + " 15:00:00")
+            future_data = tsl.getMarketTable(code=self.main_ticker, start_time=today_formatstr  + " 09:30:00",
+                                           end_time=today_formatstr  + " 15:00:00")
+        spot_data["x"] = list(range(spot_data.shape[0]))
+        future_data["x"] = list(range(future_data.shape[0]))
+        spot_df["time2min"] = spot_df["成交时间"].apply(lambda s: s[:16] +":00")
+        spot_df["amount"] = spot_df["成交价格"].mul(spot_df["成交数量"])
+        spot_df = spot_df.groupby(by="time2min").sum()
+        spot_df["markersize"] = spot_df["amount"].apply(self._cal_size)
+        spot_df["color"] = spot_df["amount"].apply(lambda x: "red" if x > 0 else "green")
+        spot_data = spot_data.reset_index()
+        spot_df = pd.merge(spot_df, spot_data, left_index=True, right_on="time")
+        future_df["time2min"] = future_df["成交时间"].apply(lambda s: s[:5] +":00")
+        future_df["amount"] = future_df["成交价格"].mul(future_df["成交数量"]) * 200
+        future_df = future_df.groupby(by="time2min").sum()
+        future_df["markersize"] = future_df["amount"].apply(self._cal_size)
+        future_df["color"] = future_df["amount"].apply(lambda x: "red" if x > 0 else "green")
+        future_data = future_data.reset_index()
+        future_data["time"] = future_data["time"].apply(lambda s: s[-8:])
+        future_df = pd.merge(future_df, future_data, left_index=True, right_on="time")
+
+
+        fig = plt.figure(figsize=(15, 6))
         plt.subplots_adjust(bottom=0.4)
-        axnext = plt.axes([0.78, 0.05, 0.2, 0.075])
+        ax2 = fig.add_subplot(1, 1, 1)
+        base = [x - y for x, y in zip(future_data["price"].tolist(), spot_data["price"].tolist())]
+        ax2.plot(spot_data["x"].tolist(), base, color="lightgray", linewidth=0.5)
+        ax = ax2.twinx()
+        ax.plot(spot_data["x"].tolist(), spot_data["price"].tolist(), color="wheat")
+        ax.plot(future_data["x"].tolist(),future_data["price"].tolist(), color="lightskyblue")
+
+        for key, record in spot_df.iterrows():
+            ax.plot([record["x"],], [record["price"],], marker="o", markersize=record["markersize"], color=record["color"])
+        for key, record in future_df.iterrows():
+            ax.plot([record["x"],], [record["price"],], marker="o", markersize=record["markersize"], color=record["color"])
+        plt.grid()
+        ax.legend(["000905", self.main_ticker,])
+        ax2.legend(["basis", ], loc="upper left")
+
+        # ax = fig.add_subplot(2, 1, 2)
+        # base = [x - y for x, y in zip(future_data["price"].tolist(),spot_data["price"].tolist())]
+        # ax.plot(spot_data["x"].tolist(),base)
+        # plt.grid()
+        # ax.legend(["basis",])
+        axnext = plt.axes([0.9, 0.02, 0.07, 0.05])
         bnext = Button(axnext, 'Resume/Stop')
-        bnext.on_clicked(stop_func)
+        bnext.on_clicked(self.stop_func)
+
+        loc1 = plt.axes([0.05, 0.02, 0.19, 0.28])
+        tb1 = TextBox(loc1, label="", initial=self.output[0])
+        loc2 = plt.axes([0.25, 0.02, 0.19, 0.28])
+        tb2 = TextBox(loc2, label="", initial=self.output[1])
+        loc3 = plt.axes([0.45, 0.02, 0.19, 0.28])
+        tb3 = TextBox(loc3, label="", initial=self.output[2])
+        loc4 = plt.axes([0.65, 0.02, 0.19, 0.28])
+        tb4 = TextBox(loc4, label="", initial=self.output[3])
+
+
+        plt.show()
+
+    def stop_func(self, event):
+        pass
 
 if __name__ == "__main__":
-    obj = Analysis()
-    obj.calculate_basis()
+    obj = Analysis(today="20191227")
     obj.total_pnl()
+    obj.plot()
